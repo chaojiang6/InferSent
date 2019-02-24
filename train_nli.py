@@ -24,10 +24,12 @@ from models import NLINet
 parser = argparse.ArgumentParser(description='NLI training')
 # paths
 parser.add_argument("--nlipath", type=str, default='dataset/SNLI/', help="NLI data path (SNLI or MultiNLI)")
-parser.add_argument("--inputModelPathAndName", type=str, help="Path of pre-trained model")
 parser.add_argument("--outputdir", type=str, default='savedir/', help="Output directory")
 parser.add_argument("--outputmodelname", type=str, default='model.pickle')
-parser.add_argument("--word_emb_path", type=str, default="dataset/GloVe/glove.840B.300d.txt", help="word embedding file path")
+parser.add_argument("--word_emb_path", type=str, default="/home/chao/SPM_toolkit/data/glove.6B/glove.840B.300d.txt", help="word embedding file path")
+parser.add_argument("--pretrainedModelPathAndName", type=str, help="Path of pre-trained model")
+parser.add_argument("--trainingDataPath", type=str, help="Training data path", required=True)
+parser.add_argument("--devAndTestDataPath", type=str, help="Developing and testing data path", required=True)
 
 # training
 parser.add_argument("--n_epochs", type=int, default=20)
@@ -42,19 +44,24 @@ parser.add_argument("--minlr", type=float, default=1e-5, help="minimum lr")
 parser.add_argument("--max_norm", type=float, default=5., help="max norm (grad clipping)")
 
 # model
-parser.add_argument("--encoder_type", type=str, default='InferSentV1', help="see list of encoders")
+parser.add_argument("--encoder_type", type=str, default='InferSent', help="see list of encoders")
 parser.add_argument("--enc_lstm_dim", type=int, default=2048, help="encoder nhid dimension")
 parser.add_argument("--n_enc_layers", type=int, default=1, help="encoder num layers")
 parser.add_argument("--fc_dim", type=int, default=512, help="nhid of fc layers")
 parser.add_argument("--n_classes", type=int, default=3, help="entailment/neutral/contradiction")
 parser.add_argument("--pool_type", type=str, default='max', help="max or mean")
+parser.add_argument("--fineTuneOnPretrainedModel", type=bool, default=False, help="Whether to fine tune on pre-trained model, if True, need to provide pre-trained model path")
 
 # gpu
-parser.add_argument("--gpu_id", type=int, default=3, help="GPU ID")
+parser.add_argument("--gpu_id", type=int, default=2, help="GPU ID")
 parser.add_argument("--seed", type=int, default=1234, help="seed")
 
 # data
 parser.add_argument("--word_emb_dim", type=int, default=300, help="word embedding dimension")
+parser.add_argument("--dataPercent", type=int, default=100, help="Use how many percent of training data")
+parser.add_argument("--taskType", type=str, help="NLI or Alignment, NLI task or Alignment task?", required=True)
+
+
 
 params, _ = parser.parse_known_args()
 
@@ -76,7 +83,7 @@ torch.cuda.manual_seed(params.seed)
 """
 DATA
 """
-train, valid, test = get_nli(params.nlipath)
+train, valid, test = get_nli(params)
 word_vec = build_vocab(train['s1'] + train['s2'] +
                        valid['s1'] + valid['s2'] +
                        test['s1'] + test['s2'], params.word_emb_path)
@@ -181,7 +188,7 @@ def trainepoch(epoch):
 
         # loss
         loss = loss_fn(output, tgt_batch)
-        all_costs.append(loss.data[0])
+        all_costs.append(loss.item())
         words_count += (s1_batch.nelement() + s2_batch.nelement()) / params.word_emb_dim
 
         # backward
@@ -278,10 +285,32 @@ def evaluate(epoch, eval_type='valid', final_eval=False):
                 adam_stop = True
     return eval_acc
 
+def weights_init(m):
+    if isinstance(m, nn.Linear):
+        print('initialize one Linear layer')
+        torch.nn.init.xavier_uniform(m.weight.data)
 
 """
 Train model on Natural Language Inference task
 """
+
+if params.fineTuneOnPretrainedModel == True:
+    if not params.pretrainedModelPathAndName:
+        print('\nIf you want to fine tune on pre-trained model, you need to specify the pre-trained model path')
+
+    nli_net.load_state_dict(torch.load(params.pretrainedModelPathAndName))
+    print('\nPre-trained model has been loaded from {}'.format(params.pretrainedModelPathAndName))
+
+    ct = 0
+    for child in nli_net.children():
+        if ct == 0:
+            for param in child.parameters():
+                param.requires_grad = False
+        if ct == 1:
+            child.apply(weights_init)
+        ct += 1
+    print('\nFreeze the Infersent encoder part, reset the classifier part')
+
 epoch = 1
 
 while not stop_training and epoch <= params.n_epochs:

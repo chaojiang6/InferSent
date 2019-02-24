@@ -56,19 +56,49 @@ def build_vocab(sentences, glove_path):
     return word_vec
 
 
-def get_nli(data_path):
+def get_nli(params):
+    data_path = params.nlipath
+
+    dataPercent = params.dataPercent
+    taskType = params.taskType
+
+    if params.trainingDataPath:
+        trainingDataPath = params.trainingDataPath
+
+    if params.devAndTestDataPath:
+        devAndTestDataPath = params.devAndTestDataPath
+
+
+
+    
     s1 = {}
     s2 = {}
     target = {}
 
-    dico_label = {'entailment': 0,  'neutral': 1, 'contradiction': 2}
+    if taskType == 'NLI':
+        dico_label = {'entailment': 0,  'neutral': 1, 'contradiction': 2}
+    elif taskType == 'Alignment':
+        dico_label = {'aligned': 0,  'partialAligned': 1, 'notAligned': 2}
 
     for data_type in ['train', 'dev', 'test']:
         s1[data_type], s2[data_type], target[data_type] = {}, {}, {}
-        s1[data_type]['path'] = os.path.join(data_path, 's1.' + data_type)
-        s2[data_type]['path'] = os.path.join(data_path, 's2.' + data_type)
-        target[data_type]['path'] = os.path.join(data_path,
-                                                 'labels.' + data_type)
+        
+        if data_type == 'train':
+            s1[data_type]['path'] = os.path.join(trainingDataPath, 's1.' + data_type)
+            s2[data_type]['path'] = os.path.join(trainingDataPath, 's2.' + data_type)
+            target[data_type]['path'] = os.path.join(trainingDataPath,
+                                                     'labels.' + data_type)
+
+
+        elif data_type == 'dev' or data_type == 'test':
+            s1[data_type]['path'] = os.path.join(devAndTestDataPath, 's1.' + data_type)
+            s2[data_type]['path'] = os.path.join(devAndTestDataPath, 's2.' + data_type)
+            target[data_type]['path'] = os.path.join(devAndTestDataPath,
+                                                     'labels.' + data_type)
+
+
+
+
 
         s1[data_type]['sent'] = [line.rstrip() for line in
                                  open(s1[data_type]['path'], 'r')]
@@ -76,6 +106,15 @@ def get_nli(data_path):
                                  open(s2[data_type]['path'], 'r')]
         target[data_type]['data'] = np.array([dico_label[line.rstrip('\n')]
                 for line in open(target[data_type]['path'], 'r')])
+
+        if dataPercent < 100 and dataPercent > 0:
+
+            roundedDataSize = int(round(dataPercent / 100 * len(s1[data_type]['sent'])))
+
+            s1[data_type]['sent'] = s1[data_type]['sent'][ : roundedDataSize]
+            s2[data_type]['sent'] = s2[data_type]['sent'][ : roundedDataSize]
+            target[data_type]['data'] = target[data_type]['data'][ : roundedDataSize]
+
 
         assert len(s1[data_type]['sent']) == len(s2[data_type]['sent']) == \
             len(target[data_type]['data'])
