@@ -18,6 +18,7 @@ import torch.nn as nn
 
 from data import get_nli, get_batch, build_vocab
 from mutils import get_optimizer
+from util import URL_maxF1_eval, save_results_to_figure
 from models import NLINet
 
 
@@ -27,9 +28,10 @@ parser.add_argument("--nlipath", type=str, default='dataset/SNLI/', help="NLI da
 parser.add_argument("--outputdir", type=str, default='savedir/', help="Output directory")
 parser.add_argument("--outputmodelname", type=str, default='model.pickle')
 parser.add_argument("--word_emb_path", type=str, default="/home/chao/SPM_toolkit/data/glove.6B/glove.840B.300d.txt", help="word embedding file path")
-parser.add_argument("--pretrainedModelPathAndName", type=str, help="Path of pre-trained model")
+parser.add_argument("--pretrainedModelPath", type=str, help="Path of pre-trained model")
 parser.add_argument("--trainingDataPath", type=str, help="Training data path", required=True)
 parser.add_argument("--devAndTestDataPath", type=str, help="Developing and testing data path", required=True)
+parser.add_argument("--outputFigurePath", type=str, help="The path to save reuslt figure", required=True)
 
 # training
 parser.add_argument("--n_epochs", type=int, default=20)
@@ -169,6 +171,9 @@ def trainepoch(epoch):
         and 'sgd' in params.optimizer else optimizer.param_groups[0]['lr']
     print('Learning rate : {0}'.format(optimizer.param_groups[0]['lr']))
 
+    pred_res = []
+    gold_res = []
+
     for stidx in range(0, len(s1), params.batch_size):
         # prepare batch
         s1_batch, s1_len = get_batch(s1[stidx:stidx + params.batch_size],
@@ -185,6 +190,9 @@ def trainepoch(epoch):
         pred = output.data.max(1)[1]
         correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
         assert len(pred) == len(s1[stidx:stidx + params.batch_size])
+
+        pred_res.extend(pred.long().cpu())
+        gold_res.extend(tgt_batch.data.long().cpu())
 
         # loss
         loss = loss_fn(output, tgt_batch)
@@ -225,9 +233,19 @@ def trainepoch(epoch):
             words_count = 0
             all_costs = []
     train_acc = np.round(100 * float(correct)/len(s1), 2)
+    
     print('results : epoch {0} ; mean accuracy train : {1}'
           .format(epoch, train_acc))
-    return train_acc
+    print("subtask size {}".format(len(pred_res)))
+    print("Task 1")
+    P_R_F_acc_wuwei_task1 = URL_maxF1_eval([True if i == 0 else False for i in pred_res], [True if i == 0 else False for i in gold_res])
+    print("train precision {}, recall {}, f1 {}, acc {}".format(P_R_F_acc_wuwei_task1[0],P_R_F_acc_wuwei_task1[1],P_R_F_acc_wuwei_task1[2],P_R_F_acc_wuwei_task1[3]))
+    
+    print("Task 2")
+    P_R_F_acc_wuwei_task2 = URL_maxF1_eval([True if i == 0 or i==1 else False for i in pred_res], [True if i == 0 or i==1 else False for i in gold_res])
+    print("train precision {}, recall {}, f1 {}, acc {}".format(P_R_F_acc_wuwei_task2[0],P_R_F_acc_wuwei_task2[1],P_R_F_acc_wuwei_task2[2],P_R_F_acc_wuwei_task2[3]))
+
+    return train_acc, P_R_F_acc_wuwei_task1[2], P_R_F_acc_wuwei_task2[2]
 
 
 def evaluate(epoch, eval_type='valid', final_eval=False):
@@ -242,6 +260,9 @@ def evaluate(epoch, eval_type='valid', final_eval=False):
     s2 = valid['s2'] if eval_type == 'valid' else test['s2']
     target = valid['label'] if eval_type == 'valid' else test['label']
 
+    gold_res = []
+    pred_res = []
+
     for i in range(0, len(s1), params.batch_size):
         # prepare batch
         s1_batch, s1_len = get_batch(s1[i:i + params.batch_size], word_vec, params.word_emb_dim)
@@ -255,6 +276,9 @@ def evaluate(epoch, eval_type='valid', final_eval=False):
         pred = output.data.max(1)[1]
         correct += pred.long().eq(tgt_batch.data.long()).cpu().sum()
 
+        pred_res.extend(pred.long().cpu()) 
+        gold_res.extend(tgt_batch.data.long().cpu())
+
     # save model
     eval_acc = np.round(100 * float(correct) / len(s1), 2)
     if final_eval:
@@ -262,6 +286,25 @@ def evaluate(epoch, eval_type='valid', final_eval=False):
     else:
         print('togrep : results : epoch {0} ; mean accuracy {1} :\
               {2}'.format(epoch, eval_type, eval_acc))
+
+
+    print("subtask size {}".format(len(pred_res)))
+
+    print("Task 1")
+    P_R_F_acc_wuwei_task1 = URL_maxF1_eval([True if i == 0 else False for i in pred_res], [True if i == 0 else False for i in gold_res])
+    if eval_type == "valid":
+        print("dev precision {}, recall {}, f1 {}, acc {}".format(P_R_F_acc_wuwei_task1[0],P_R_F_acc_wuwei_task1[1],P_R_F_acc_wuwei_task1[2],P_R_F_acc_wuwei_task1[3]))
+    else:
+        print("test precision {}, recall {}, f1 {}, acc {}".format(P_R_F_acc_wuwei_task1[0],P_R_F_acc_wuwei_task1[1],P_R_F_acc_wuwei_task1[2],P_R_F_acc_wuwei_task1[3]))
+    
+    
+    print("Task 2")
+    P_R_F_acc_wuwei_task2 = URL_maxF1_eval([True if i == 0 or i==1 else False for i in pred_res], [True if i == 0 or i==1 else False for i in gold_res])
+    if eval_type == "valid":
+        print("dev precision {}, recall {}, f1 {}, acc {}".format(P_R_F_acc_wuwei_task2[0],P_R_F_acc_wuwei_task2[1],P_R_F_acc_wuwei_task2[2],P_R_F_acc_wuwei_task2[3]))
+    else:
+        print("test precision {}, recall {}, f1 {}, acc {}".format(P_R_F_acc_wuwei_task2[0],P_R_F_acc_wuwei_task2[1],P_R_F_acc_wuwei_task2[2],P_R_F_acc_wuwei_task2[3]))
+
 
     if eval_type == 'valid' and epoch <= params.n_epochs:
         if eval_acc > val_acc_best:
@@ -283,39 +326,57 @@ def evaluate(epoch, eval_type='valid', final_eval=False):
                 # early stopping (at 2nd decrease in accuracy)
                 stop_training = adam_stop
                 adam_stop = True
-    return eval_acc
+    return eval_acc, P_R_F_acc_wuwei_task1[2], P_R_F_acc_wuwei_task2[2]
 
 def weights_init(m):
     if isinstance(m, nn.Linear):
         print('initialize one Linear layer')
-        torch.nn.init.xavier_uniform(m.weight.data)
+        torch.nn.init.xavier_uniform_(m.weight.data)
 
 """
 Train model on Natural Language Inference task
 """
 
 if params.fineTuneOnPretrainedModel == True:
-    if not params.pretrainedModelPathAndName:
+    if not params.pretrainedModelPath:
         print('\nIf you want to fine tune on pre-trained model, you need to specify the pre-trained model path')
 
-    nli_net.load_state_dict(torch.load(params.pretrainedModelPathAndName))
-    print('\nPre-trained model has been loaded from {}'.format(params.pretrainedModelPathAndName))
+    nli_net.load_state_dict(torch.load(params.pretrainedModelPath))
+    print('\nPre-trained model has been loaded from {}'.format(params.pretrainedModelPath))
 
-    ct = 0
-    for child in nli_net.children():
-        if ct == 0:
-            for param in child.parameters():
-                param.requires_grad = False
-        if ct == 1:
-            child.apply(weights_init)
-        ct += 1
-    print('\nFreeze the Infersent encoder part, reset the classifier part')
+    # ct = 0
+    # for child in nli_net.children():
+    #     if ct == 0:
+    #         for param in child.parameters():
+    #             param.requires_grad = False
+    #     if ct == 1:
+    #         child.apply(weights_init)
+    #     ct += 1
+    # print('\nFreeze the Infersent encoder part, reset the classifier part')
 
 epoch = 1
 
+result_dict = {}
+for k in ["train_acc", "train_task1_f1", "train_task2_f1", "dev_acc", "dev_task1_f1", "dev_task2_f1", "test_acc", "test_task1_f1", "test_task2_f1"]:
+    result_dict[k] = []
+
 while not stop_training and epoch <= params.n_epochs:
-    train_acc = trainepoch(epoch)
-    eval_acc = evaluate(epoch, 'valid')
+    train_acc, train_task1_f1, train_task2_f1 = trainepoch(epoch)
+    dev_acc, dev_task1_f1, dev_task2_f1 = evaluate(epoch, 'valid')
+    test_acc, test_task1_f1, test_task2_f1 = evaluate(epoch, 'test')
+
+    result_dict["train_acc"].append(train_acc)    
+    result_dict["train_task1_f1"].append(train_task1_f1)
+    result_dict["train_task2_f1"].append(train_task2_f1)
+    result_dict["dev_acc"].append(dev_acc)
+    result_dict["dev_task1_f1"].append(dev_task1_f1)
+    result_dict["dev_task2_f1"].append(dev_task2_f1)
+    result_dict["test_acc"].append(test_acc)
+    result_dict["test_task1_f1"].append(test_task1_f1)
+    result_dict["test_task2_f1"].append(test_task2_f1)
+
+
+
     epoch += 1
 
 # Run best model on test set.
@@ -327,3 +388,4 @@ evaluate(0, 'test', True)
 
 # Save encoder instead of full model
 torch.save(nli_net.encoder.state_dict(), os.path.join(params.outputdir, params.outputmodelname + '.encoder.pkl'))
+save_results_to_figure(params.outputFigurePath, result_dict)
