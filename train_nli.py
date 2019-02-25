@@ -31,7 +31,7 @@ parser.add_argument("--word_emb_path", type=str, default="/home/chao/SPM_toolkit
 parser.add_argument("--pretrainedModelPath", type=str, help="Path of pre-trained model")
 parser.add_argument("--trainingDataPath", type=str, help="Training data path", required=True)
 parser.add_argument("--devAndTestDataPath", type=str, help="Developing and testing data path", required=True)
-parser.add_argument("--outputFigurePath", type=str, help="The path to save reuslt figure", required=True)
+parser.add_argument("--outputFigurePath", type=str, help="The path to save reuslt figure")
 
 # training
 parser.add_argument("--n_epochs", type=int, default=20)
@@ -44,6 +44,9 @@ parser.add_argument("--lrshrink", type=float, default=5, help="shrink factor for
 parser.add_argument("--decay", type=float, default=0.99, help="lr decay")
 parser.add_argument("--minlr", type=float, default=1e-5, help="minimum lr")
 parser.add_argument("--max_norm", type=float, default=5., help="max norm (grad clipping)")
+parser.add_argument("--freezeEncoder", action='store_true', help="don't update the weight of encoder, need to load pre-trained model")
+parser.add_argument("--resetClassifier", action='store_true', help="re-init the weight of classifier, need to load pre-trained model")
+
 
 # model
 parser.add_argument("--encoder_type", type=str, default='InferSent', help="see list of encoders")
@@ -52,7 +55,7 @@ parser.add_argument("--n_enc_layers", type=int, default=1, help="encoder num lay
 parser.add_argument("--fc_dim", type=int, default=512, help="nhid of fc layers")
 parser.add_argument("--n_classes", type=int, default=3, help="entailment/neutral/contradiction")
 parser.add_argument("--pool_type", type=str, default='max', help="max or mean")
-parser.add_argument("--fineTuneOnPretrainedModel", type=bool, default=False, help="Whether to fine tune on pre-trained model, if True, need to provide pre-trained model path")
+parser.add_argument("--fineTuneOnPretrainedModel", action='store_true', help="Whether to fine tune on pre-trained model, if True, need to provide pre-trained model path")
 
 # gpu
 parser.add_argument("--gpu_id", type=int, default=2, help="GPU ID")
@@ -339,20 +342,36 @@ Train model on Natural Language Inference task
 
 if params.fineTuneOnPretrainedModel == True:
     if not params.pretrainedModelPath:
-        print('\nIf you want to fine tune on pre-trained model, you need to specify the pre-trained model path')
+        print('\nERROR: If you want to fine tune on pre-trained model, you need to specify the pre-trained model path')
 
     nli_net.load_state_dict(torch.load(params.pretrainedModelPath))
     print('\nPre-trained model has been loaded from {}'.format(params.pretrainedModelPath))
 
-    # ct = 0
-    # for child in nli_net.children():
-    #     if ct == 0:
-    #         for param in child.parameters():
-    #             param.requires_grad = False
-    #     if ct == 1:
-    #         child.apply(weights_init)
-    #     ct += 1
-    # print('\nFreeze the Infersent encoder part, reset the classifier part')
+
+
+
+if params.freezeEncoder == True:
+    if params.fineTuneOnPretrainedModel == True:
+        ct = 0
+        for child in nli_net.children():
+            if ct == 0:
+                for param in child.parameters():
+                    param.requires_grad = False
+            ct += 1
+        print('\nFreeze the Infersent encoder part')
+    else:
+        print("\nERROR: If you want to freeze encoder, you need to use pre-trained encoder")
+
+if params.resetClassifier == True:
+    if params.fineTuneOnPretrainedModel == True:
+        ct = 0
+        for child in nli_net.children():
+            if ct == 1:
+                child.apply(weights_init)
+            ct += 1
+        print('\nre-Init classifier weight')
+    else:
+        print("\nERROR: If you want to reset classifier, you need to use pre-trained encoder")
 
 epoch = 1
 
@@ -388,4 +407,5 @@ evaluate(0, 'test', True)
 
 # Save encoder instead of full model
 torch.save(nli_net.encoder.state_dict(), os.path.join(params.outputdir, params.outputmodelname + '.encoder.pkl'))
-save_results_to_figure(params.outputFigurePath, result_dict)
+if params.outputFigurePath:
+    save_results_to_figure(params.outputFigurePath, result_dict)
