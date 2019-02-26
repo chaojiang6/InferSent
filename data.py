@@ -107,7 +107,7 @@ def get_nli(params):
         target[data_type]['data'] = np.array([dico_label[line.rstrip('\n')]
                 for line in open(target[data_type]['path'], 'r')])
 
-        if dataPercent < 100 and dataPercent > 0:
+        if data_type == "train" and dataPercent < 100 and dataPercent > 0:
 
             roundedDataSize = int(round(dataPercent / 100 * len(s1[data_type]['sent'])))
 
